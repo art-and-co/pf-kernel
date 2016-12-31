@@ -284,7 +284,7 @@ __write_ctrl_pciv2(struct fritzcard *fc, struct hdlc_hw *hdlc, u32 channel) {
 					  AVM_HDLC_STATUS_1));
 }
 
-void
+static void
 write_ctrl(struct bchannel *bch, int which) {
 	struct fritzcard *fc = bch->hw;
 	struct hdlc_hw *hdlc;
@@ -741,7 +741,7 @@ inithdlc(struct fritzcard *fc)
 	modehdlc(&fc->bch[1], -1);
 }
 
-void
+static void
 clear_pending_hdlc_ints(struct fritzcard *fc)
 {
 	u32 val;
@@ -962,7 +962,7 @@ avm_dctrl(struct mISDNchannel *ch, u32 cmd, void *arg)
 	return err;
 }
 
-int
+static int
 setup_fritz(struct fritzcard *fc)
 {
 	u32 val, ver;
@@ -1034,7 +1034,7 @@ release_card(struct fritzcard *card)
 	AVM_cnt--;
 }
 
-static int __devinit
+static int
 setup_instance(struct fritzcard *card)
 {
 	int i, err;
@@ -1096,7 +1096,7 @@ error:
 	return err;
 }
 
-static int __devinit
+static int
 fritzpci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	int err = -ENOMEM;
@@ -1130,7 +1130,7 @@ fritzpci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	return err;
 }
 
-static void __devexit
+static void
 fritz_remove_pci(struct pci_dev *pdev)
 {
 	struct fritzcard *card = pci_get_drvdata(pdev);
@@ -1142,7 +1142,7 @@ fritz_remove_pci(struct pci_dev *pdev)
 			pr_info("%s: drvdata already removed\n", __func__);
 }
 
-static struct pci_device_id fcpci_ids[] __devinitdata = {
+static struct pci_device_id fcpci_ids[] = {
 	{ PCI_VENDOR_ID_AVM, PCI_DEVICE_ID_AVM_A1, PCI_ANY_ID, PCI_ANY_ID,
 	  0, 0, (unsigned long) "Fritz!Card PCI"},
 	{ PCI_VENDOR_ID_AVM, PCI_DEVICE_ID_AVM_A1_V2, PCI_ANY_ID, PCI_ANY_ID,
@@ -1154,7 +1154,7 @@ MODULE_DEVICE_TABLE(pci, fcpci_ids);
 static struct pci_driver fcpci_driver = {
 	.name = "fcpci",
 	.probe = fritzpci_probe,
-	.remove = __devexit_p(fritz_remove_pci),
+	.remove = fritz_remove_pci,
 	.id_table = fcpci_ids,
 };
 

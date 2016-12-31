@@ -25,10 +25,8 @@
 
 #include <linux/slab.h>
 #include <linux/i2c.h>
-#include <linux/fb.h>
 #include <drm/drm_edid.h>
-#include "drmP.h"
-#include "drm_edid.h"
+#include <drm/drmP.h>
 #include "intel_drv.h"
 #include "i915_drv.h"
 
@@ -45,8 +43,6 @@ int intel_connector_update_modes(struct drm_connector *connector,
 	drm_mode_connector_update_edid_property(connector, edid);
 	ret = drm_add_edid_modes(connector, edid);
 	drm_edid_to_eld(connector, edid);
-	connector->display_info.raw_edid = NULL;
-	kfree(edid);
 
 	return ret;
 }
@@ -62,12 +58,16 @@ int intel_ddc_get_modes(struct drm_connector *connector,
 			struct i2c_adapter *adapter)
 {
 	struct edid *edid;
+	int ret;
 
 	edid = drm_get_edid(connector, adapter);
 	if (!edid)
 		return 0;
 
-	return intel_connector_update_modes(connector, edid);
+	ret = intel_connector_update_modes(connector, edid);
+	kfree(edid);
+
+	return ret;
 }
 
 static const struct drm_prop_enum_list force_audio_names[] = {
@@ -81,7 +81,7 @@ void
 intel_attach_force_audio_property(struct drm_connector *connector)
 {
 	struct drm_device *dev = connector->dev;
-	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct drm_property *prop;
 
 	prop = dev_priv->force_audio_property;
@@ -95,19 +95,20 @@ intel_attach_force_audio_property(struct drm_connector *connector)
 
 		dev_priv->force_audio_property = prop;
 	}
-	drm_connector_attach_property(connector, prop, 0);
+	drm_object_attach_property(&connector->base, prop, 0);
 }
 
 static const struct drm_prop_enum_list broadcast_rgb_names[] = {
-	{ 0, "Full" },
-	{ 1, "Limited 16:235" },
+	{ INTEL_BROADCAST_RGB_AUTO, "Automatic" },
+	{ INTEL_BROADCAST_RGB_FULL, "Full" },
+	{ INTEL_BROADCAST_RGB_LIMITED, "Limited 16:235" },
 };
 
 void
 intel_attach_broadcast_rgb_property(struct drm_connector *connector)
 {
 	struct drm_device *dev = connector->dev;
-	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct drm_property *prop;
 
 	prop = dev_priv->broadcast_rgb_property;
@@ -122,5 +123,14 @@ intel_attach_broadcast_rgb_property(struct drm_connector *connector)
 		dev_priv->broadcast_rgb_property = prop;
 	}
 
-	drm_connector_attach_property(connector, prop, 0);
+	drm_object_attach_property(&connector->base, prop, 0);
+}
+
+void
+intel_attach_aspect_ratio_property(struct drm_connector *connector)
+{
+	if (!drm_mode_create_aspect_ratio_property(connector->dev))
+		drm_object_attach_property(&connector->base,
+			connector->dev->mode_config.aspect_ratio_property,
+			DRM_MODE_PICTURE_ASPECT_NONE);
 }

@@ -18,7 +18,7 @@
  * AUG/22/2000 : added support for 32-bit Dual-Address-Mode (K) 2000
  *               Oliver Kamphenkel (O.Kamphenkel@tu-bs.de)
  *
- * AUG/25/2000 : addad support for 8, 16 and 32-bit Single-Address-Mode (K)2000
+ * AUG/25/2000 : added support for 8, 16 and 32-bit Single-Address-Mode (K)2000
  *               Oliver Kamphenkel (O.Kamphenkel@tu-bs.de)
  *
  * APR/18/2002 : added proper support for MCF5272 DMA controller.
@@ -39,7 +39,7 @@
 #define MAX_M68K_DMA_CHANNELS 4
 #elif defined(CONFIG_M5272)
 #define MAX_M68K_DMA_CHANNELS 1
-#elif defined(CONFIG_M532x)
+#elif defined(CONFIG_M53xx)
 #define MAX_M68K_DMA_CHANNELS 0
 #else
 #define MAX_M68K_DMA_CHANNELS 2

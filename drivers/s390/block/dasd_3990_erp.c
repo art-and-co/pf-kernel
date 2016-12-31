@@ -229,7 +229,7 @@ dasd_3990_erp_DCTL(struct dasd_ccw_req * erp, char modifier)
 	dctl_cqr->expires = 5 * 60 * HZ;
 	dctl_cqr->retries = 2;
 
-	dctl_cqr->buildclk = get_clock();
+	dctl_cqr->buildclk = get_tod_clock();
 
 	dctl_cqr->status = DASD_CQR_FILLED;
 
@@ -1367,8 +1367,14 @@ dasd_3990_erp_no_rec(struct dasd_ccw_req * default_erp, char *sense)
 
 	struct dasd_device *device = default_erp->startdev;
 
-	dev_err(&device->cdev->dev,
-		    "The specified record was not found\n");
+	/*
+	 * In some cases the 'No Record Found' error might be expected and
+	 * log messages shouldn't be written then.
+	 * Check if the according suppress bit is set.
+	 */
+	if (!test_bit(DASD_CQR_SUPPRESS_NRF, &default_erp->flags))
+		dev_err(&device->cdev->dev,
+			"The specified record was not found\n");
 
 	return dasd_3990_erp_cleanup(default_erp, DASD_CQR_FAILED);
 
@@ -1393,8 +1399,14 @@ dasd_3990_erp_file_prot(struct dasd_ccw_req * erp)
 
 	struct dasd_device *device = erp->startdev;
 
-	dev_err(&device->cdev->dev, "Accessing the DASD failed because of "
-		"a hardware error\n");
+	/*
+	 * In some cases the 'File Protected' error might be expected and
+	 * log messages shouldn't be written then.
+	 * Check if the according suppress bit is set.
+	 */
+	if (!test_bit(DASD_CQR_SUPPRESS_FP, &erp->flags))
+		dev_err(&device->cdev->dev,
+			"Accessing the DASD failed because of a hardware error\n");
 
 	return dasd_3990_erp_cleanup(erp, DASD_CQR_FAILED);
 
@@ -1719,7 +1731,7 @@ dasd_3990_erp_action_1B_32(struct dasd_ccw_req * default_erp, char *sense)
 	erp->magic = default_erp->magic;
 	erp->expires = default_erp->expires;
 	erp->retries = 256;
-	erp->buildclk = get_clock();
+	erp->buildclk = get_tod_clock();
 	erp->status = DASD_CQR_FILLED;
 
 	/* remove the default erp */
@@ -2322,7 +2334,7 @@ static struct dasd_ccw_req *dasd_3990_erp_add_erp(struct dasd_ccw_req *cqr)
 			DBF_DEV_EVENT(DBF_ERR, device, "%s",
 				    "Unable to allocate ERP request");
 			cqr->status = DASD_CQR_FAILED;
-                        cqr->stopclk = get_clock ();
+			cqr->stopclk = get_tod_clock();
 		} else {
 			DBF_DEV_EVENT(DBF_ERR, device,
                                      "Unable to allocate ERP request "
@@ -2364,7 +2376,7 @@ static struct dasd_ccw_req *dasd_3990_erp_add_erp(struct dasd_ccw_req *cqr)
 	erp->magic    = cqr->magic;
 	erp->expires  = cqr->expires;
 	erp->retries  = 256;
-	erp->buildclk = get_clock();
+	erp->buildclk = get_tod_clock();
 	erp->status = DASD_CQR_FILLED;
 
 	return erp;

@@ -22,20 +22,16 @@
  * Authors: Ben Skeggs
  */
 
-#include "drmP.h"
 #include "nouveau_drv.h"
 #include "nouveau_dma.h"
-#include "nouveau_ramht.h"
 #include "nouveau_fbcon.h"
-#include "nouveau_mm.h"
 
 int
 nvc0_fbcon_fillrect(struct fb_info *info, const struct fb_fillrect *rect)
 {
 	struct nouveau_fbdev *nfbdev = info->par;
-	struct drm_device *dev = nfbdev->dev;
-	struct drm_nouveau_private *dev_priv = dev->dev_private;
-	struct nouveau_channel *chan = dev_priv->channel;
+	struct nouveau_drm *drm = nouveau_drm(nfbdev->dev);
+	struct nouveau_channel *chan = drm->channel;
 	int ret;
 
 	ret = RING_SPACE(chan, rect->rop == ROP_COPY ? 7 : 11);
@@ -69,9 +65,8 @@ int
 nvc0_fbcon_copyarea(struct fb_info *info, const struct fb_copyarea *region)
 {
 	struct nouveau_fbdev *nfbdev = info->par;
-	struct drm_device *dev = nfbdev->dev;
-	struct drm_nouveau_private *dev_priv = dev->dev_private;
-	struct nouveau_channel *chan = dev_priv->channel;
+	struct nouveau_drm *drm = nouveau_drm(nfbdev->dev);
+	struct nouveau_channel *chan = drm->channel;
 	int ret;
 
 	ret = RING_SPACE(chan, 12);
@@ -98,10 +93,9 @@ int
 nvc0_fbcon_imageblit(struct fb_info *info, const struct fb_image *image)
 {
 	struct nouveau_fbdev *nfbdev = info->par;
-	struct drm_device *dev = nfbdev->dev;
-	struct drm_nouveau_private *dev_priv = dev->dev_private;
-	struct nouveau_channel *chan = dev_priv->channel;
-	uint32_t width, dwords, *data = (uint32_t *)image->data;
+	struct nouveau_drm *drm = nouveau_drm(nfbdev->dev);
+	struct nouveau_channel *chan = drm->channel;
+	uint32_t dwords, *data = (uint32_t *)image->data;
 	uint32_t mask = ~(~0 >> (32 - info->var.bits_per_pixel));
 	uint32_t *palette = info->pseudo_palette;
 	int ret;
@@ -112,9 +106,6 @@ nvc0_fbcon_imageblit(struct fb_info *info, const struct fb_image *image)
 	ret = RING_SPACE(chan, 11);
 	if (ret)
 		return ret;
-
-	width = ALIGN(image->width, 32);
-	dwords = (width * image->height) >> 5;
 
 	BEGIN_NVC0(chan, NvSub2D, 0x0814, 2);
 	if (info->fix.visual == FB_VISUAL_TRUECOLOR ||
@@ -134,6 +125,7 @@ nvc0_fbcon_imageblit(struct fb_info *info, const struct fb_image *image)
 	OUT_RING  (chan, 0);
 	OUT_RING  (chan, image->dy);
 
+	dwords = ALIGN(ALIGN(image->width, 8) * image->height, 32) >> 5;
 	while (dwords) {
 		int push = dwords > 2047 ? 2047 : dwords;
 
@@ -157,12 +149,13 @@ nvc0_fbcon_accel_init(struct fb_info *info)
 {
 	struct nouveau_fbdev *nfbdev = info->par;
 	struct drm_device *dev = nfbdev->dev;
-	struct drm_nouveau_private *dev_priv = dev->dev_private;
-	struct nouveau_channel *chan = dev_priv->channel;
 	struct nouveau_framebuffer *fb = &nfbdev->nouveau_fb;
+	struct nouveau_drm *drm = nouveau_drm(dev);
+	struct nouveau_channel *chan = drm->channel;
 	int ret, format;
 
-	ret = nouveau_gpuobj_gr_new(chan, 0x902d, 0x902d);
+	ret = nvif_object_init(&chan->user, 0x902d, 0x902d, NULL, 0,
+			       &nfbdev->twod);
 	if (ret)
 		return ret;
 
@@ -193,7 +186,7 @@ nvc0_fbcon_accel_init(struct fb_info *info)
 		return -EINVAL;
 	}
 
-	ret = RING_SPACE(chan, 60);
+	ret = RING_SPACE(chan, 58);
 	if (ret) {
 		WARN_ON(1);
 		nouveau_fbcon_gpu_lockup(info);
@@ -201,10 +194,7 @@ nvc0_fbcon_accel_init(struct fb_info *info)
 	}
 
 	BEGIN_NVC0(chan, NvSub2D, 0x0000, 1);
-	OUT_RING  (chan, 0x0000902d);
-	BEGIN_NVC0(chan, NvSub2D, 0x0104, 2);
-	OUT_RING  (chan, upper_32_bits(chan->notifier_vma.offset));
-	OUT_RING  (chan, lower_32_bits(chan->notifier_vma.offset));
+	OUT_RING  (chan, nfbdev->twod.handle);
 	BEGIN_NVC0(chan, NvSub2D, 0x0290, 1);
 	OUT_RING  (chan, 0);
 	BEGIN_NVC0(chan, NvSub2D, 0x0888, 1);

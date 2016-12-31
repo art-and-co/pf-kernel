@@ -73,7 +73,8 @@ static int l2tp_eth_dev_init(struct net_device *dev)
 
 	priv->dev = dev;
 	eth_hw_addr_random(dev);
-	memset(&dev->broadcast[0], 0xff, 6);
+	eth_broadcast_addr(dev->broadcast);
+	netdev_lockdep_set_classes(dev);
 
 	return 0;
 }
@@ -120,11 +121,12 @@ static struct rtnl_link_stats64 *l2tp_eth_get_stats64(struct net_device *dev,
 }
 
 
-static struct net_device_ops l2tp_eth_netdev_ops = {
+static const struct net_device_ops l2tp_eth_netdev_ops = {
 	.ndo_init		= l2tp_eth_dev_init,
 	.ndo_uninit		= l2tp_eth_dev_uninit,
 	.ndo_start_xmit		= l2tp_eth_dev_xmit,
 	.ndo_get_stats64	= l2tp_eth_get_stats64,
+	.ndo_set_mac_address	= eth_mac_addr,
 };
 
 static void l2tp_eth_dev_setup(struct net_device *dev)
@@ -193,7 +195,7 @@ static void l2tp_eth_delete(struct l2tp_session *session)
 	}
 }
 
-#if defined(CONFIG_L2TP_DEBUGFS) || defined(CONFIG_L2TP_DEBUGFS_MODULE)
+#if IS_ENABLED(CONFIG_L2TP_DEBUGFS)
 static void l2tp_eth_show(struct seq_file *m, void *arg)
 {
 	struct l2tp_session *session = arg;
@@ -245,7 +247,8 @@ static int l2tp_eth_create(struct net *net, u32 tunnel_id, u32 session_id, u32 p
 		goto out;
 	}
 
-	dev = alloc_netdev(sizeof(*priv), name, l2tp_eth_dev_setup);
+	dev = alloc_netdev(sizeof(*priv), name, NET_NAME_UNKNOWN,
+			   l2tp_eth_dev_setup);
 	if (!dev) {
 		rc = -ENOMEM;
 		goto out_del_session;
@@ -265,7 +268,7 @@ static int l2tp_eth_create(struct net *net, u32 tunnel_id, u32 session_id, u32 p
 	priv->tunnel_sock = tunnel->sock;
 	session->recv_skb = l2tp_eth_dev_recv;
 	session->session_close = l2tp_eth_delete;
-#if defined(CONFIG_L2TP_DEBUGFS) || defined(CONFIG_L2TP_DEBUGFS_MODULE)
+#if IS_ENABLED(CONFIG_L2TP_DEBUGFS)
 	session->show = l2tp_eth_show;
 #endif
 
@@ -290,6 +293,7 @@ static int l2tp_eth_create(struct net *net, u32 tunnel_id, u32 session_id, u32 p
 
 out_del_dev:
 	free_netdev(dev);
+	spriv->dev = NULL;
 out_del_session:
 	l2tp_session_delete(session);
 out:
@@ -354,3 +358,4 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("James Chapman <jchapman@katalix.com>");
 MODULE_DESCRIPTION("L2TP ethernet pseudowire driver");
 MODULE_VERSION("1.0");
+MODULE_ALIAS_L2TP_PWTYPE(5);

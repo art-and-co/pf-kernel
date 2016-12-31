@@ -284,10 +284,9 @@ struct ad9523_state {
 	} data[2] ____cacheline_aligned;
 };
 
-static int ad9523_read(struct iio_dev *indio_dev, unsigned addr)
+static int ad9523_read(struct iio_dev *indio_dev, unsigned int addr)
 {
 	struct ad9523_state *st = iio_priv(indio_dev);
-	struct spi_message m;
 	int ret;
 
 	/* We encode the register size 1..3 bytes into the register address.
@@ -305,15 +304,11 @@ static int ad9523_read(struct iio_dev *indio_dev, unsigned addr)
 		},
 	};
 
-	spi_message_init(&m);
-	spi_message_add_tail(&t[0], &m);
-	spi_message_add_tail(&t[1], &m);
-
 	st->data[0].d32 = cpu_to_be32(AD9523_READ |
 				      AD9523_CNT(AD9523_TRANSF_LEN(addr)) |
 				      AD9523_ADDR(addr));
 
-	ret = spi_sync(st->spi, &m);
+	ret = spi_sync_transfer(st->spi, t, ARRAY_SIZE(t));
 	if (ret < 0)
 		dev_err(&indio_dev->dev, "read failed (%d)", ret);
 	else
@@ -323,10 +318,10 @@ static int ad9523_read(struct iio_dev *indio_dev, unsigned addr)
 	return ret;
 };
 
-static int ad9523_write(struct iio_dev *indio_dev, unsigned addr, unsigned val)
+static int ad9523_write(struct iio_dev *indio_dev,
+		unsigned int addr, unsigned int val)
 {
 	struct ad9523_state *st = iio_priv(indio_dev);
-	struct spi_message m;
 	int ret;
 	struct spi_transfer t[] = {
 		{
@@ -338,16 +333,12 @@ static int ad9523_write(struct iio_dev *indio_dev, unsigned addr, unsigned val)
 		},
 	};
 
-	spi_message_init(&m);
-	spi_message_add_tail(&t[0], &m);
-	spi_message_add_tail(&t[1], &m);
-
 	st->data[0].d32 = cpu_to_be32(AD9523_WRITE |
 				      AD9523_CNT(AD9523_TRANSF_LEN(addr)) |
 				      AD9523_ADDR(addr));
 	st->data[1].d32 = cpu_to_be32(val);
 
-	ret = spi_sync(st->spi, &m);
+	ret = spi_sync_transfer(st->spi, t, ARRAY_SIZE(t));
 
 	if (ret < 0)
 		dev_err(&indio_dev->dev, "write failed (%d)", ret);
@@ -361,11 +352,11 @@ static int ad9523_io_update(struct iio_dev *indio_dev)
 }
 
 static int ad9523_vco_out_map(struct iio_dev *indio_dev,
-			      unsigned ch, unsigned out)
+			      unsigned int ch, unsigned int out)
 {
 	struct ad9523_state *st = iio_priv(indio_dev);
 	int ret;
-	unsigned mask;
+	unsigned int mask;
 
 	switch (ch) {
 	case 0 ... 3:
@@ -415,7 +406,7 @@ static int ad9523_vco_out_map(struct iio_dev *indio_dev,
 }
 
 static int ad9523_set_clock_provider(struct iio_dev *indio_dev,
-			      unsigned ch, unsigned long freq)
+			      unsigned int ch, unsigned long freq)
 {
 	struct ad9523_state *st = iio_priv(indio_dev);
 	long tmp1, tmp2;
@@ -455,7 +446,7 @@ static int ad9523_store_eeprom(struct iio_dev *indio_dev)
 
 	tmp = 4;
 	do {
-		msleep(16);
+		msleep(20);
 		ret = ad9523_read(indio_dev,
 				  AD9523_EEPROM_DATA_XFER_STATUS);
 		if (ret < 0)
@@ -629,7 +620,7 @@ static int ad9523_read_raw(struct iio_dev *indio_dev,
 			   long m)
 {
 	struct ad9523_state *st = iio_priv(indio_dev);
-	unsigned code;
+	unsigned int code;
 	int ret;
 
 	mutex_lock(&indio_dev->mlock);
@@ -665,7 +656,7 @@ static int ad9523_write_raw(struct iio_dev *indio_dev,
 			    long mask)
 {
 	struct ad9523_state *st = iio_priv(indio_dev);
-	unsigned reg;
+	unsigned int reg;
 	int ret, tmp, code;
 
 	mutex_lock(&indio_dev->mlock);
@@ -719,8 +710,8 @@ out:
 }
 
 static int ad9523_reg_access(struct iio_dev *indio_dev,
-			      unsigned reg, unsigned writeval,
-			      unsigned *readval)
+			      unsigned int reg, unsigned int writeval,
+			      unsigned int *readval)
 {
 	int ret;
 
@@ -930,10 +921,10 @@ static int ad9523_setup(struct iio_dev *indio_dev)
 			st->ad9523_channels[i].channel = chan->channel_num;
 			st->ad9523_channels[i].extend_name =
 				chan->extended_name;
-			st->ad9523_channels[i].info_mask =
-				IIO_CHAN_INFO_RAW_SEPARATE_BIT |
-				IIO_CHAN_INFO_PHASE_SEPARATE_BIT |
-				IIO_CHAN_INFO_FREQUENCY_SEPARATE_BIT;
+			st->ad9523_channels[i].info_mask_separate =
+				BIT(IIO_CHAN_INFO_RAW) |
+				BIT(IIO_CHAN_INFO_PHASE) |
+				BIT(IIO_CHAN_INFO_FREQUENCY);
 		}
 	}
 
@@ -959,7 +950,7 @@ static int ad9523_setup(struct iio_dev *indio_dev)
 	return 0;
 }
 
-static int __devinit ad9523_probe(struct spi_device *spi)
+static int ad9523_probe(struct spi_device *spi)
 {
 	struct ad9523_platform_data *pdata = spi->dev.platform_data;
 	struct iio_dev *indio_dev;
@@ -971,17 +962,17 @@ static int __devinit ad9523_probe(struct spi_device *spi)
 		return -EINVAL;
 	}
 
-	indio_dev = iio_device_alloc(sizeof(*st));
+	indio_dev = devm_iio_device_alloc(&spi->dev, sizeof(*st));
 	if (indio_dev == NULL)
 		return -ENOMEM;
 
 	st = iio_priv(indio_dev);
 
-	st->reg = regulator_get(&spi->dev, "vcc");
+	st->reg = devm_regulator_get(&spi->dev, "vcc");
 	if (!IS_ERR(st->reg)) {
 		ret = regulator_enable(st->reg);
 		if (ret)
-			goto error_put_reg;
+			return ret;
 	}
 
 	spi_set_drvdata(spi, indio_dev);
@@ -1011,28 +1002,19 @@ static int __devinit ad9523_probe(struct spi_device *spi)
 error_disable_reg:
 	if (!IS_ERR(st->reg))
 		regulator_disable(st->reg);
-error_put_reg:
-	if (!IS_ERR(st->reg))
-		regulator_put(st->reg);
-
-	iio_device_free(indio_dev);
 
 	return ret;
 }
 
-static int __devexit ad9523_remove(struct spi_device *spi)
+static int ad9523_remove(struct spi_device *spi)
 {
 	struct iio_dev *indio_dev = spi_get_drvdata(spi);
 	struct ad9523_state *st = iio_priv(indio_dev);
 
 	iio_device_unregister(indio_dev);
 
-	if (!IS_ERR(st->reg)) {
+	if (!IS_ERR(st->reg))
 		regulator_disable(st->reg);
-		regulator_put(st->reg);
-	}
-
-	iio_device_free(indio_dev);
 
 	return 0;
 }
@@ -1046,10 +1028,9 @@ MODULE_DEVICE_TABLE(spi, ad9523_id);
 static struct spi_driver ad9523_driver = {
 	.driver = {
 		.name	= "ad9523",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= ad9523_probe,
-	.remove		= __devexit_p(ad9523_remove),
+	.remove		= ad9523_remove,
 	.id_table	= ad9523_id,
 };
 module_spi_driver(ad9523_driver);

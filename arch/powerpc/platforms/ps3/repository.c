@@ -437,7 +437,7 @@ found_dev:
 	return 0;
 }
 
-int __devinit ps3_repository_find_devices(enum ps3_bus_type bus_type,
+int ps3_repository_find_devices(enum ps3_bus_type bus_type,
 	int (*callback)(const struct ps3_repository_device *repo))
 {
 	int result = 0;
@@ -1198,7 +1198,7 @@ int ps3_repository_delete_highmem_info(unsigned int region_index)
 	return result ? -1 : 0;
 }
 
-#endif /* defined(CONFIG_PS3_WRITE_REPOSITORY) */
+#endif /* defined(CONFIG_PS3_REPOSITORY_WRITE) */
 
 #if defined(DEBUG)
 

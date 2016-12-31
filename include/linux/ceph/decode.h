@@ -3,10 +3,11 @@
 
 #include <linux/err.h>
 #include <linux/bug.h>
+#include <linux/slab.h>
 #include <linux/time.h>
 #include <asm/unaligned.h>
 
-#include "types.h"
+#include <linux/ceph/types.h>
 
 /*
  * in all cases,
@@ -47,15 +48,15 @@ static inline void ceph_decode_copy(void **p, void *pv, size_t n)
 /*
  * bounds check input.
  */
-static inline int ceph_has_room(void **p, void *end, size_t n)
+static inline bool ceph_has_room(void **p, void *end, size_t n)
 {
 	return end >= *p && n <= end - *p;
 }
 
-#define ceph_decode_need(p, end, n, bad)		\
-	do {						\
-		if (!likely(ceph_has_room(p, end, n)))	\
-			goto bad;			\
+#define ceph_decode_need(p, end, n, bad)			\
+	do {							\
+		if (!likely(ceph_has_room(p, end, n)))		\
+			goto bad;				\
 	} while (0)
 
 #define ceph_decode_64_safe(p, end, v, bad)			\
@@ -99,8 +100,8 @@ static inline int ceph_has_room(void **p, void *end, size_t n)
  *
  * There are two possible failures:
  *   - converting the string would require accessing memory at or
- *     beyond the "end" pointer provided (-E
- *   - memory could not be allocated for the result
+ *     beyond the "end" pointer provided (-ERANGE)
+ *   - memory could not be allocated for the result (-ENOMEM)
  */
 static inline char *ceph_extract_encoded_string(void **p, void *end,
 						size_t *lenp, gfp_t gfp)
@@ -137,14 +138,14 @@ bad:
 static inline void ceph_decode_timespec(struct timespec *ts,
 					const struct ceph_timespec *tv)
 {
-	ts->tv_sec = le32_to_cpu(tv->tv_sec);
-	ts->tv_nsec = le32_to_cpu(tv->tv_nsec);
+	ts->tv_sec = (__kernel_time_t)le32_to_cpu(tv->tv_sec);
+	ts->tv_nsec = (long)le32_to_cpu(tv->tv_nsec);
 }
 static inline void ceph_encode_timespec(struct ceph_timespec *tv,
 					const struct timespec *ts)
 {
-	tv->tv_sec = cpu_to_le32(ts->tv_sec);
-	tv->tv_nsec = cpu_to_le32(ts->tv_nsec);
+	tv->tv_sec = cpu_to_le32((u32)ts->tv_sec);
+	tv->tv_nsec = cpu_to_le32((u32)ts->tv_nsec);
 }
 
 /*
@@ -217,10 +218,64 @@ static inline void ceph_encode_string(void **p, void *end,
 	*p += len;
 }
 
-#define ceph_encode_need(p, end, n, bad)		\
-	do {						\
-		if (!likely(ceph_has_room(p, end, n)))	\
-			goto bad;			\
+/*
+ * version and length starting block encoders/decoders
+ */
+
+/* current code version (u8) + compat code version (u8) + len of struct (u32) */
+#define CEPH_ENCODING_START_BLK_LEN 6
+
+/**
+ * ceph_start_encoding - start encoding block
+ * @struct_v: current (code) version of the encoding
+ * @struct_compat: oldest code version that can decode it
+ * @struct_len: length of struct encoding
+ */
+static inline void ceph_start_encoding(void **p, u8 struct_v, u8 struct_compat,
+				       u32 struct_len)
+{
+	ceph_encode_8(p, struct_v);
+	ceph_encode_8(p, struct_compat);
+	ceph_encode_32(p, struct_len);
+}
+
+/**
+ * ceph_start_decoding - start decoding block
+ * @v: current version of the encoding that the code supports
+ * @name: name of the struct (free-form)
+ * @struct_v: out param for the encoding version
+ * @struct_len: out param for the length of struct encoding
+ *
+ * Validates the length of struct encoding, so unsafe ceph_decode_*
+ * variants can be used for decoding.
+ */
+static inline int ceph_start_decoding(void **p, void *end, u8 v,
+				      const char *name, u8 *struct_v,
+				      u32 *struct_len)
+{
+	u8 struct_compat;
+
+	ceph_decode_need(p, end, CEPH_ENCODING_START_BLK_LEN, bad);
+	*struct_v = ceph_decode_8(p);
+	struct_compat = ceph_decode_8(p);
+	if (v < struct_compat) {
+		pr_warn("got struct_v %d struct_compat %d > %d of %s\n",
+			*struct_v, struct_compat, v, name);
+		return -EINVAL;
+	}
+
+	*struct_len = ceph_decode_32(p);
+	ceph_decode_need(p, end, *struct_len, bad);
+	return 0;
+
+bad:
+	return -ERANGE;
+}
+
+#define ceph_encode_need(p, end, n, bad)			\
+	do {							\
+		if (!likely(ceph_has_room(p, end, n)))		\
+			goto bad;				\
 	} while (0)
 
 #define ceph_encode_64_safe(p, end, v, bad)			\
@@ -231,12 +286,17 @@ static inline void ceph_encode_string(void **p, void *end,
 #define ceph_encode_32_safe(p, end, v, bad)			\
 	do {							\
 		ceph_encode_need(p, end, sizeof(u32), bad);	\
-		ceph_encode_32(p, v);			\
+		ceph_encode_32(p, v);				\
 	} while (0)
 #define ceph_encode_16_safe(p, end, v, bad)			\
 	do {							\
 		ceph_encode_need(p, end, sizeof(u16), bad);	\
-		ceph_encode_16(p, v);			\
+		ceph_encode_16(p, v);				\
+	} while (0)
+#define ceph_encode_8_safe(p, end, v, bad)			\
+	do {							\
+		ceph_encode_need(p, end, sizeof(u8), bad);	\
+		ceph_encode_8(p, v);				\
 	} while (0)
 
 #define ceph_encode_copy_safe(p, end, pv, n, bad)		\

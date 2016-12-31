@@ -159,15 +159,6 @@ read_block_bitmap(struct super_block *sb, unsigned int block_group)
 	return bh;
 }
 
-static void release_blocks(struct super_block *sb, int count)
-{
-	if (count) {
-		struct ext2_sb_info *sbi = EXT2_SB(sb);
-
-		percpu_counter_add(&sbi->s_freeblocks_counter, count);
-	}
-}
-
 static void group_adjust_blocks(struct super_block *sb, int group_no,
 	struct ext2_group_desc *desc, struct buffer_head *bh, int count)
 {
@@ -479,7 +470,7 @@ void ext2_discard_reservation(struct inode *inode)
 /**
  * ext2_free_blocks() -- Free given blocks and update quota and i_blocks
  * @inode:		inode
- * @block:		start physcial block to free
+ * @block:		start physical block to free
  * @count:		number of blocks to free
  */
 void ext2_free_blocks (struct inode * inode, unsigned long block,
@@ -568,8 +559,11 @@ do_more:
 	}
 error_return:
 	brelse(bitmap_bh);
-	release_blocks(sb, freed);
-	dquot_free_block_nodirty(inode, freed);
+	if (freed) {
+		percpu_counter_add(&sbi->s_freeblocks_counter, freed);
+		dquot_free_block_nodirty(inode, freed);
+		mark_inode_dirty(inode);
+	}
 }
 
 /**
@@ -1200,6 +1194,27 @@ static int ext2_has_free_blocks(struct ext2_sb_info *sbi)
 }
 
 /*
+ * Returns 1 if the passed-in block region is valid; 0 if some part overlaps
+ * with filesystem metadata blocksi.
+ */
+int ext2_data_block_valid(struct ext2_sb_info *sbi, ext2_fsblk_t start_blk,
+			  unsigned int count)
+{
+	if ((start_blk <= le32_to_cpu(sbi->s_es->s_first_data_block)) ||
+	    (start_blk + count < start_blk) ||
+	    (start_blk > le32_to_cpu(sbi->s_es->s_blocks_count)))
+		return 0;
+
+	/* Ensure we do not step over superblock */
+	if ((start_blk <= sbi->s_sb_block) &&
+	    (start_blk + count >= sbi->s_sb_block))
+		return 0;
+
+
+	return 1;
+}
+
+/*
  * ext2_new_blocks() -- core block(s) allocation function
  * @inode:		file inode
  * @goal:		given target block(filesystem wide)
@@ -1239,10 +1254,6 @@ ext2_fsblk_t ext2_new_blocks(struct inode *inode, ext2_fsblk_t goal,
 
 	*errp = -ENOSPC;
 	sb = inode->i_sb;
-	if (!sb) {
-		printk("ext2_new_blocks: nonexistent device");
-		return 0;
-	}
 
 	/*
 	 * Check quota for allocation of this block.
@@ -1416,9 +1427,11 @@ allocated:
 
 	*errp = 0;
 	brelse(bitmap_bh);
-	dquot_free_block_nodirty(inode, *count-num);
-	mark_inode_dirty(inode);
-	*count = num;
+	if (num < *count) {
+		dquot_free_block_nodirty(inode, *count-num);
+		mark_inode_dirty(inode);
+		*count = num;
+	}
 	return ret_block;
 
 io_error:

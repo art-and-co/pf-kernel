@@ -33,7 +33,7 @@
  * are being written out - and waiting for GC to make progress, naturally.
  *
  * So we cannot just call iget() or some variant of it, but first have to check
- * wether the inode in question might be in I_FREEING state.  Therefore we
+ * whether the inode in question might be in I_FREEING state.  Therefore we
  * maintain our own per-sb list of "almost deleted" inodes and check against
  * that list first.  Normally this should be at most 1-2 entries long.
  *
@@ -64,7 +64,8 @@ static void logfs_inode_setops(struct inode *inode)
 		inode->i_mapping->a_ops = &logfs_reg_aops;
 		break;
 	case S_IFLNK:
-		inode->i_op = &logfs_symlink_iops;
+		inode->i_op = &page_symlink_inode_operations;
+		inode_nohighmem(inode);
 		inode->i_mapping->a_ops = &logfs_reg_aops;
 		break;
 	case S_IFSOCK:	/* fall through */
@@ -208,12 +209,12 @@ static void logfs_init_inode(struct super_block *sb, struct inode *inode)
 	li->li_height	= 0;
 	li->li_used_bytes = 0;
 	li->li_block	= NULL;
-	inode->i_uid	= 0;
-	inode->i_gid	= 0;
+	i_uid_write(inode, 0);
+	i_gid_write(inode, 0);
 	inode->i_size	= 0;
 	inode->i_blocks	= 0;
-	inode->i_ctime	= CURRENT_TIME;
-	inode->i_mtime	= CURRENT_TIME;
+	inode->i_ctime	= current_time(inode);
+	inode->i_mtime	= current_time(inode);
 	li->li_refcount = 1;
 	INIT_LIST_HEAD(&li->li_freeing_list);
 
@@ -408,7 +409,8 @@ const struct super_operations logfs_super_operations = {
 int logfs_init_inode_cache(void)
 {
 	logfs_inode_cache = kmem_cache_create("logfs_inode_cache",
-			sizeof(struct logfs_inode), 0, SLAB_RECLAIM_ACCOUNT,
+			sizeof(struct logfs_inode), 0,
+			SLAB_RECLAIM_ACCOUNT|SLAB_ACCOUNT,
 			logfs_init_once);
 	if (!logfs_inode_cache)
 		return -ENOMEM;
@@ -417,5 +419,10 @@ int logfs_init_inode_cache(void)
 
 void logfs_destroy_inode_cache(void)
 {
+	/*
+	 * Make sure all delayed rcu free inodes are flushed before we
+	 * destroy cache.
+	 */
+	rcu_barrier();
 	kmem_cache_destroy(logfs_inode_cache);
 }

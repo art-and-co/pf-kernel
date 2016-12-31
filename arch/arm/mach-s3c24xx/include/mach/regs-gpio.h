@@ -14,8 +14,6 @@
 #ifndef __ASM_ARCH_REGS_GPIO_H
 #define __ASM_ARCH_REGS_GPIO_H
 
-#include <mach/gpio-nrs.h>
-
 #define S3C24XX_MISCCR		S3C24XX_GPIOREG2(0x80)
 
 /* general configuration options */
@@ -459,9 +457,6 @@
 
 /* miscellaneous control */
 #define S3C2410_MISCCR	   S3C2410_GPIOREG(0x80)
-#define S3C2410_DCLKCON	   S3C2410_GPIOREG(0x84)
-
-#define S3C24XX_DCLKCON	   S3C24XX_GPIOREG2(0x84)
 
 /* see clock.h for dclk definitions */
 
@@ -525,7 +520,7 @@
 #define S3C24XX_EXTINT1	   S3C24XX_GPIOREG2(0x8C)
 #define S3C24XX_EXTINT2	   S3C24XX_GPIOREG2(0x90)
 
-/* interrupt filtering conrrol for EINT16..EINT23 */
+/* interrupt filtering control for EINT16..EINT23 */
 #define S3C2410_EINFLT0	   S3C2410_GPIOREG(0x94)
 #define S3C2410_EINFLT1	   S3C2410_GPIOREG(0x98)
 #define S3C2410_EINFLT2	   S3C2410_GPIOREG(0x9C)
